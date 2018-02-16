@@ -51,7 +51,7 @@ void initialData(float *ip,int size) {
 
 void printMatrix(int *C, const int nx, const int ny) {
   int *ic = C;
-  printf("\nMatrix: (%d.%d)\n",nx,ny);
+  printf("\nMatrix: (%d.%d)\n", nx, ny);
   for (int iy=0; iy<ny; iy++) {
     for (int ix=0; ix<nx; ix++) {
       printf("%3d",ic[ix]);
@@ -100,63 +100,61 @@ int main(int argc, char **argv) {
   CHECK(cudaGetDeviceProperties(&deviceProp, dev));
   printf("Using Device %d: %s\n", dev, deviceProp.name);
   CHECK(cudaSetDevice(dev));
-  // set up date size of matrix
-  int nx = 1<<14;
-  int ny = 1<<14;
-  int nxy = nx*ny;
-  int nBytes = nxy * sizeof(float);
-  printf("Matrix size: nx %d ny %d\n",nx, ny);
+  // set up date size of vectors
+  int nElem = 1<<24;
+  printf("Vector size %d\n", nElem);
   // malloc host memory
+  size_t nBytes = nElem * sizeof(float);
   float *h_A, *h_B, *hostRef, *gpuRef;
-  h_A = (float *)malloc(nBytes);
-  h_B = (float *)malloc(nBytes);
+  h_A
+  = (float *)malloc(nBytes);
+  h_B
+  = (float *)malloc(nBytes);
   hostRef = (float *)malloc(nBytes);
   gpuRef = (float *)malloc(nBytes);
+  double iStart,iElaps;
   // initialize data at host side
-  double iStart = cpuSecond();
-  initialData (h_A, nxy);
-  initialData (h_B, nxy);
-  double iElaps = cpuSecond() - iStart;
+  iStart = cpuSecond();
+  initialData (h_A, nElem);
+  initialData (h_B, nElem);
+  iElaps = cpuSecond() - iStart;
   memset(hostRef, 0, nBytes);
   memset(gpuRef, 0, nBytes);
-  // add matrix at host side for result checks
+  // add vector at host side for result checks
   iStart = cpuSecond();
-  sumMatrixOnHost (h_A, h_B, hostRef, nx, ny);
+  sumArraysOnHost (h_A, h_B, hostRef, nElem);
   iElaps = cpuSecond() - iStart;
   // malloc device global memory
-  float *d_MatA, *d_MatB, *d_MatC;
-  cudaMalloc((void **)&d_MatA, nBytes);
-  cudaMalloc((void **)&d_MatB, nBytes);
-  cudaMalloc((void **)&d_MatC, nBytes);
+  float *d_A, *d_B, *d_C;
+  cudaMalloc((float**)&d_A, nBytes);
+  cudaMalloc((float**)&d_B, nBytes);
+  cudaMalloc((float**)&d_C, nBytes);
   // transfer data from host to device
-  cudaMemcpy(d_MatA, h_A, nBytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_MatB, h_B, nBytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_B, h_B, nBytes, cudaMemcpyHostToDevice);
   // invoke kernel at host side
-  int dimx = 32;
-  int dimy = 32;
-  dim3 block(dimx, dimy);
-  dim3 grid((nx+block.x-1)/block.x, (ny+block.y-1)/block.y);
+  int iLen = 1024;
+  dim3 block (iLen);
+  dim3 grid ((nElem+block.x-1)/block.x);
   iStart = cpuSecond();
-  sumMatrixOnGPU2D <<< grid, block >>>(d_MatA, d_MatB, d_MatC, nx, ny);
+  sumArraysOnGPU <<<grid, block>>>(d_A, d_B, d_C,nElem);
   cudaDeviceSynchronize();
   iElaps = cpuSecond() - iStart;
-  printf("sumMatrixOnGPU2D <<<(%d,%d), (%d,%d)>>> elapsed %f sec\n", grid.x,
-  grid.y, block.x, block.y, iElaps);
+  printf("sumArraysOnGPU <<<%d,%d>>> Time elapsed %f" \
+  "sec\n", grid.x, block.x, iElaps);
   // copy kernel result back to host side
-  cudaMemcpy(gpuRef, d_MatC, nBytes, cudaMemcpyDeviceToHost);
+  cudaMemcpy(gpuRef, d_C, nBytes, cudaMemcpyDeviceToHost);
   // check device results
-  checkResult(hostRef, gpuRef, nxy);
+  checkResult(hostRef, gpuRef, nElem);
   // free device global memory
-  cudaFree(d_MatA);
-  cudaFree(d_MatB);
-  cudaFree(d_MatC);
+  cudaFree(d_A);
+  cudaFree(d_B);
+  cudaFree(d_C);
   // free host memory
   free(h_A);
   free(h_B);
   free(hostRef);
   free(gpuRef);
-  // reset device
-  cudaDeviceReset();
 
   return 0;
 }
